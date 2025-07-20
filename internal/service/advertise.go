@@ -1,12 +1,19 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
 	"net/url"
+	"path"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/azoma13/marketplace-service/config"
 	"github.com/azoma13/marketplace-service/internal/entity"
 	"github.com/azoma13/marketplace-service/internal/repo"
 	"github.com/azoma13/marketplace-service/internal/repo/pgdb"
@@ -25,6 +32,10 @@ func NewAdvertiseService(advertiseRepo repo.Advertise, userRepo repo.User) *Adve
 }
 
 func (s *AdvertiseService) CreateAdvertise(ctx context.Context, input AdvertiseCreateNewAdvertiseInput) (entity.Advertise, error) {
+	err := ValidImage(input.Image)
+	if err != nil {
+		return entity.Advertise{}, fmt.Errorf("AdvertiseService.CreateAdvertise - ValidImage: %v", err)
+	}
 
 	advertise := &entity.Advertise{
 		Title:       input.Title,
@@ -54,6 +65,51 @@ func (s *AdvertiseService) GetFeedAdvertise(ctx context.Context, input Advertise
 	}
 
 	return adv, nil
+}
+
+func ValidImage(imageUrl string) error {
+	decodedUrlFile, err := url.QueryUnescape(imageUrl)
+	if err != nil {
+		return err
+	}
+	urlFile := strings.ReplaceAll(decodedUrlFile, " ", "_")
+
+	fileName := path.Base(urlFile)
+	if idx := strings.Index(fileName, "?"); idx != -1 {
+		fileName = fileName[:idx]
+	}
+
+	ext := path.Ext(fileName)
+	ok := slices.Contains(config.Cfg.AllowedFileExtensions, ext)
+	if !ok {
+		return fmt.Errorf("extension file not allowed")
+	}
+
+	response, err := http.Get(imageUrl)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("file was not found link: %s", imageUrl)
+	}
+
+	size := config.Cfg.APP.MaxImageSize * 1024 * 1024
+	limitReader := io.LimitReader(response.Body, size+1)
+	buffer := new(bytes.Buffer)
+
+	n, err := buffer.ReadFrom(limitReader)
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	log.Println(n, size)
+	if n > size {
+		return fmt.Errorf("max image size has been exceeded")
+	}
+
+	return nil
 }
 
 func ParseParam(input AdvertiseGetFeedAdInput) (pgdb.AdvertiseGetFeedAdRepo, error) {

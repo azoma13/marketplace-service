@@ -21,6 +21,7 @@ type (
 		Name                  string   `env:"APP_NAME"`
 		Version               string   `env:"APP_VERSION"`
 		AllowedFileExtensions []string `env:"APP_ALLOWED_FILE_EXTENSIONS"`
+		MaxImageSize          int64    `env:"APP_MAX_IMAGE_SIZE"`
 	}
 
 	HTTP struct {
